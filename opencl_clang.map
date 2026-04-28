@@ -4,6 +4,7 @@ global:
    CheckCompileOptions;
    CheckLinkOptions;
    Compile;
+   CompileSYCL;
    Link;
    GetKernelArgInfo;
    PCM_OPENCL_C_H*;

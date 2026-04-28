@@ -187,6 +187,7 @@ add_public_tablegen_target(CClangCompileOptions)
 #
 set(TARGET_INCLUDE_FILES
     opencl_clang.h
+    sycl_compile.h
     options.h
     binary_result.h
     pch_mgr.h
@@ -196,6 +197,7 @@ set(TARGET_INCLUDE_FILES
 
 set(TARGET_SOURCE_FILES
     opencl_clang.cpp
+    sycl_compile.cpp
     options.cpp
     pch_mgr.cpp
     options_compile.cpp
@@ -258,9 +260,13 @@ if(USE_PREBUILT_LLVM OR CLANG_LINK_CLANG_DYLIB)
 else()
   list(APPEND OPENCL_CLANG_LINK_LIBS
     clangBasic
+    clangCodeGen
+    clangDriver
     clangFrontend
     clangFrontendTool
+    clangOptions
     clangSerialization
+    clangTooling
   )
 endif()
 
@@ -306,7 +312,7 @@ if (WIN32)
 elseif(UNIX)
     set_property(TARGET ${TARGET_NAME} APPEND_STRING PROPERTY
         COMPILE_DEFINITIONS LIBOPENCL_CLANG_NAME="$<TARGET_SONAME_FILE_NAME:${TARGET_NAME}>")
-    
+
     # Sanitizers do not support this flag, disable this when under sanitizer build
     if(NOT LLVM_USE_SANITIZER)
         set_property(TARGET ${TARGET_NAME} APPEND_STRING PROPERTY
@@ -314,7 +320,7 @@ elseif(UNIX)
     endif()
 endif(WIN32)
 
-install(FILES opencl_clang.h
+install(FILES opencl_clang.h sycl_compile.h
         DESTINATION include/cclang
         COMPONENT ${TARGET_NAME})
 
