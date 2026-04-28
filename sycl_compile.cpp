@@ -33,21 +33,10 @@ Copyright (c) Intel Corporation (2009-2026).
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/VirtualFileSystem.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar/DCE.h"
-#include "llvm/Transforms/Scalar/EarlyCSE.h"
-#include "llvm/Transforms/Scalar/SROA.h"
-#include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Analysis/LoopAnalysisManager.h"
-#include "llvm/Passes/PassBuilder.h"
 
-#include "llvm/SYCLLowerIR/ESIMD/LowerESIMD.h"
-#include "llvm/SYCLLowerIR/LowerInvokeSimd.h"
 #include "llvm/SYCLLowerIR/SYCLJointMatrixTransform.h"
-#include "llvm/SYCLLowerIR/SYCLDeviceLibBF16.h"
 #include "llvm/SYCLPostLink/ComputeModuleRuntimeInfo.h"
 #include "llvm/SYCLPostLink/ModuleSplitter.h"
-#include "llvm/GenXIntrinsics/GenXSPIRVWriterAdaptor.h"
 
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
@@ -102,51 +91,6 @@ template <class PassClass> static bool runModulePass(llvm::Module &M) {
   MPM.addPass(PassClass{});
   llvm::PreservedAnalyses Res = MPM.run(M, MAM);
   return !Res.areAllPreserved();
-}
-
-/// Lower ESIMD constructs in a split module.
-static void lowerEsimdConstructs(llvm::module_split::ModuleDesc &MD) {
-  llvm::LoopAnalysisManager LAM;
-  llvm::CGSCCAnalysisManager CGAM;
-  llvm::FunctionAnalysisManager FAM;
-  llvm::ModuleAnalysisManager MAM;
-
-  llvm::PassBuilder PB;
-  PB.registerModuleAnalyses(MAM);
-  PB.registerCGSCCAnalyses(CGAM);
-  PB.registerFunctionAnalyses(FAM);
-  PB.registerLoopAnalyses(LAM);
-  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-  llvm::ModulePassManager MPM;
-  MPM.addPass(llvm::SYCLLowerESIMDPass(/*ModuleContainsScalar=*/false));
-
-  llvm::FunctionPassManager FPM;
-  FPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
-  MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-
-  MPM.addPass(llvm::ESIMDOptimizeVecArgCallConvPass{});
-
-  llvm::FunctionPassManager MainFPM;
-  MainFPM.addPass(llvm::ESIMDLowerLoadStorePass{});
-  MainFPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
-  MainFPM.addPass(llvm::EarlyCSEPass(true));
-  MainFPM.addPass(llvm::InstCombinePass{});
-  MainFPM.addPass(llvm::DCEPass{});
-  MainFPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
-  MainFPM.addPass(llvm::EarlyCSEPass(true));
-  MainFPM.addPass(llvm::InstCombinePass{});
-  MainFPM.addPass(llvm::DCEPass{});
-
-  MPM.addPass(llvm::ESIMDLowerSLMReservationCalls{});
-  MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(MainFPM)));
-  MPM.addPass(llvm::GenXSPIRVWriterAdaptor(/*RewriteTypes=*/true,
-                                            /*RewriteSingleElementVectorsIn=*/false));
-
-  std::vector<std::string> Names;
-  MD.saveEntryPointNames(Names);
-  MPM.run(MD.getModule(), MAM);
-  MD.rebuildEntryPoints(Names);
 }
 
 /// Build the SPIR-V translator options with Intel SYCL extensions enabled.
@@ -295,17 +239,8 @@ static bool translateToSPIRV(llvm::Module &M,
 static bool runPostLinkAndTranslate(std::unique_ptr<llvm::Module> Module,
                                     llvm::SmallVectorImpl<char> &OutputBuffer,
                                     std::string &ErrLog) {
-  // Propagate ESIMD attribute to wrapper functions
-  runModulePass<llvm::SYCLFixupESIMDKernelWrapperMDPass>(*Module);
-
   // Transform Joint Matrix builtin calls
   runModulePass<llvm::SYCLJointMatrixTransformPass>(*Module);
-
-  // invoke_simd processing
-  if (runModulePass<llvm::SYCLLowerInvokeSimdPass>(*Module)) {
-    ErrLog += "error: invoke_simd calls detected but not supported\n";
-    return false;
-  }
 
   // Split by device code split mode (default: auto)
   auto Splitter = llvm::module_split::getDeviceCodeSplitter(
@@ -330,36 +265,22 @@ static bool runPostLinkAndTranslate(std::unique_ptr<llvm::Module> Module,
   bool FirstSplit = true;
   while (Splitter->hasMoreSplits()) {
     auto MDesc = Splitter->nextSplit();
+    MDesc->saveSplitInformationAsMetadata();
 
-    // Further split ESIMD vs standard SYCL
-    auto ESIMDSplits = llvm::module_split::splitByESIMD(
-        std::move(MDesc),
-        /*EmitOnlyKernelsAsEntryPoints=*/true,
-        /*AllowDeviceImageDependencies=*/false);
-
-    for (auto &ES : ESIMDSplits) {
-      MDesc = std::move(ES);
-
-      if (MDesc->isESIMD())
-        lowerEsimdConstructs(*MDesc);
-
-      MDesc->saveSplitInformationAsMetadata();
-
-      // Translate to SPIR-V
-      // For the first split, write to the main output buffer.
-      // For subsequent splits, we still translate but only keep the first
-      // (the caller can extend this to handle multiple device images).
-      if (FirstSplit) {
-        if (!translateToSPIRV(MDesc->getModule(), OutputBuffer, ErrLog))
-          return false;
-        FirstSplit = false;
-      } else {
-        llvm::SmallVector<char, 4096> ExtraBuf;
-        if (!translateToSPIRV(MDesc->getModule(), ExtraBuf, ErrLog))
-          return false;
-        // Additional splits are translated but not returned to caller.
-        // TODO: extend API to return multiple device images if needed.
-      }
+    // Translate to SPIR-V
+    // For the first split, write to the main output buffer.
+    // For subsequent splits, we still translate but only keep the first
+    // (the caller can extend this to handle multiple device images).
+    if (FirstSplit) {
+      if (!translateToSPIRV(MDesc->getModule(), OutputBuffer, ErrLog))
+        return false;
+      FirstSplit = false;
+    } else {
+      llvm::SmallVector<char, 4096> ExtraBuf;
+      if (!translateToSPIRV(MDesc->getModule(), ExtraBuf, ErrLog))
+        return false;
+      // Additional splits are translated but not returned to caller.
+      // TODO: extend API to return multiple device images if needed.
     }
   }
 
