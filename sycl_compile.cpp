@@ -31,6 +31,7 @@ Copyright (c) Intel Corporation (2009-2026).
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
@@ -159,6 +160,61 @@ static SPIRV::TranslatorOpts getSYCLSPIRVTranslatorOpts() {
   return Opts;
 }
 
+/// Detect system GCC C++ include paths at runtime.
+/// Mirrors clang::driver::toolchains::Generic_GCC::addGCCLibStdCxxIncludePaths
+/// which adds -internal-isystem for:
+///   1. /usr/include/c++/<ver>
+///   2. /usr/include/<triple>/c++/<ver>  (Debian multiarch)
+///   3. /usr/include/c++/<ver>/backward
+/// See clang/lib/Driver/ToolChains/Gnu.cpp:addLibStdCXXIncludePaths()
+/// and clang/lib/Driver/ToolChain.cpp:addSystemInclude() which emits
+/// -internal-isystem.
+static void addSystemCXXIncludePaths(std::vector<std::string> &Args) {
+  namespace fs = llvm::sys::fs;
+  namespace path = llvm::sys::path;
+
+  // Scan /usr/include/c++/ for the highest GCC version directory
+  std::string BestVersion;
+  std::string BaseDir = "/usr/include/c++";
+  std::error_code EC;
+  for (fs::directory_iterator Dir(BaseDir, EC), End; !EC && Dir != End;
+       Dir.increment(EC)) {
+    llvm::StringRef DirName = path::filename(Dir->path());
+    if (BestVersion.empty() || DirName > BestVersion)
+      BestVersion = DirName.str();
+  }
+  if (BestVersion.empty())
+    return;
+
+  // GPLUSPLUS_INCLUDE_DIR
+  Args.push_back("-internal-isystem");
+  Args.push_back(BaseDir + "/" + BestVersion);
+
+  // GPLUSPLUS_TOOL_INCLUDE_DIR (Debian multiarch)
+  Args.push_back("-internal-isystem");
+  Args.push_back("/usr/include/x86_64-linux-gnu/c++/" + BestVersion);
+
+  // GPLUSPLUS_BACKWARD_INCLUDE_DIR
+  Args.push_back("-internal-isystem");
+  Args.push_back(BaseDir + "/" + BestVersion + "/backward");
+
+  // GCC internal headers
+  std::string GccInternal =
+      "/usr/lib/gcc/x86_64-linux-gnu/" + BestVersion + "/include";
+  if (fs::is_directory(GccInternal)) {
+    Args.push_back("-internal-isystem");
+    Args.push_back(GccInternal);
+  }
+
+  // System include dirs
+  Args.push_back("-internal-isystem");
+  Args.push_back("/usr/local/include");
+  Args.push_back("-internal-isystem");
+  Args.push_back("/usr/include/x86_64-linux-gnu");
+  Args.push_back("-internal-isystem");
+  Args.push_back("/usr/include");
+}
+
 /// Build the Clang cc1-level arguments for SYCL device compilation.
 /// Target: spir64 (SPIR-V), EmitLLVMOnly action to get an llvm::Module.
 /// Note: these are cc1 flags (not driver flags) since we call
@@ -203,9 +259,12 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
 
   // Clang resource headers (stddef.h, etc.)
 #ifdef CLANG_RESOURCE_DIR
-  Args.push_back("-isystem");
+  Args.push_back("-internal-isystem");
   Args.push_back(CLANG_RESOURCE_DIR);
 #endif
+
+  // System C++ standard library headers (runtime-detected GCC paths)
+  addSystemCXXIncludePaths(Args);
 
   // Append user options
   if (pszOptions && pszOptions[0] != '\0') {
