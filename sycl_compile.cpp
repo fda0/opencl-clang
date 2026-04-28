@@ -159,18 +159,21 @@ static SPIRV::TranslatorOpts getSYCLSPIRVTranslatorOpts() {
   return Opts;
 }
 
-/// Build the Clang command-line arguments for SYCL device compilation.
+/// Build the Clang cc1-level arguments for SYCL device compilation.
 /// Target: spir64 (SPIR-V), EmitLLVMOnly action to get an llvm::Module.
+/// Note: these are cc1 flags (not driver flags) since we call
+/// CompilerInvocation::CreateFromArgs directly, bypassing the driver.
 static std::vector<std::string>
 buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
                      const char *sourceName) {
   std::vector<std::string> Args;
 
-  // Compiler executable (placeholder for argv[0])
-  Args.push_back("clang++");
+  // cc1 mode — no argv[0] needed for CreateFromArgs
 
-  // SYCL device-only compilation targeting SPIR-V
-  Args.push_back("-fsycl-device-only");
+  // Language: C++ with SYCL device mode
+  Args.push_back("-x");
+  Args.push_back("c++");
+  Args.push_back("-fsycl-is-device");
   Args.push_back("-fno-sycl-instrument-device-code");
 
   // Target triple for SPIR-V 64-bit
@@ -183,11 +186,8 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   // Disable LLVM passes — we'll do post-link ourselves
   Args.push_back("-disable-llvm-passes");
 
-  // C++ / SYCL language standard
+  // C++ standard
   Args.push_back("-std=c++17");
-
-  // Suppress warnings about unused arguments
-  Args.push_back("-Qunused-arguments");
 
   // Append user options
   if (pszOptions && pszOptions[0] != '\0') {
