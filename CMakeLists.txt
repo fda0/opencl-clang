@@ -101,7 +101,7 @@ endif (WIN32)
 
 # set that name of the main output file as a target name
 if (NOT DEFINED OPENCL_CLANG_LIBRARY_NAME)
-    set(OPENCL_CLANG_LIBRARY_NAME "opencl-clang")
+  set(OPENCL_CLANG_LIBRARY_NAME "opencl-clang")
 endif()
 set(TARGET_NAME ${OPENCL_CLANG_LIBRARY_NAME}${BUILD_PLATFORM} )
 
@@ -112,10 +112,28 @@ if(NOT DEFINED SYCL_INCLUDE_DIR)
 endif()
 # Clang resource dir is where built clang puts its internal headers
 set(CLANG_RESOURCE_DIR "${LLVM_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include")
+
+# Generate feature_test.hpp (normally done by the sycl runtime CMake)
+set(SYCL_EXT_ONEAPI_BACKEND_CUDA 0)
+set(SYCL_EXT_ONEAPI_BACKEND_HIP 0)
+set(SYCL_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers")
+file(MAKE_DIRECTORY "${SYCL_GENERATED_INCLUDE_DIR}/sycl")
+# Find the template relative to SYCL_INCLUDE_DIR
+set(_feature_test_in "${SYCL_INCLUDE_DIR}/../source/feature_test.hpp.in")
+if(EXISTS "${_feature_test_in}")
+  configure_file("${_feature_test_in}"
+                  "${SYCL_GENERATED_INCLUDE_DIR}/sycl/feature_test.hpp")
+  message(STATUS "[OPENCL-CLANG-SYCL] Generated feature_test.hpp")
+else()
+  message(WARNING "[OPENCL-CLANG-SYCL] Could not find feature_test.hpp.in at ${_feature_test_in}")
+endif()
+
 message(STATUS "[OPENCL-CLANG-SYCL] SYCL_INCLUDE_DIR: ${SYCL_INCLUDE_DIR}")
 message(STATUS "[OPENCL-CLANG-SYCL] CLANG_RESOURCE_DIR: ${CLANG_RESOURCE_DIR}")
+message(STATUS "[OPENCL-CLANG-SYCL] SYCL_GENERATED_INCLUDE_DIR: ${SYCL_GENERATED_INCLUDE_DIR}")
 add_definitions(-DSYCL_INCLUDE_DIR="${SYCL_INCLUDE_DIR}")
 add_definitions(-DCLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}")
+add_definitions(-DSYCL_GENERATED_INCLUDE_DIR="${SYCL_GENERATED_INCLUDE_DIR}")
 
 # OPENCL_CLANG_PCH_EXTENSION can override PCH extension map in options_compile.cpp.
 # Example: "cl_khr_3d_image_writes,cl_khr_depth_images"

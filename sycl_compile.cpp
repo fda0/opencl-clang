@@ -195,6 +195,12 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   Args.push_back(SYCL_INCLUDE_DIR);
 #endif
 
+  // Generated SYCL headers (feature_test.hpp, etc.)
+#ifdef SYCL_GENERATED_INCLUDE_DIR
+  Args.push_back("-isystem");
+  Args.push_back(SYCL_GENERATED_INCLUDE_DIR);
+#endif
+
   // Clang resource headers (stddef.h, etc.)
 #ifdef CLANG_RESOURCE_DIR
   Args.push_back("-isystem");
