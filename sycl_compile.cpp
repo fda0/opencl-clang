@@ -189,6 +189,18 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   // C++ standard
   Args.push_back("-std=c++17");
 
+  // SYCL runtime headers
+#ifdef SYCL_INCLUDE_DIR
+  Args.push_back("-isystem");
+  Args.push_back(SYCL_INCLUDE_DIR);
+#endif
+
+  // Clang resource headers (stddef.h, etc.)
+#ifdef CLANG_RESOURCE_DIR
+  Args.push_back("-isystem");
+  Args.push_back(CLANG_RESOURCE_DIR);
+#endif
+
   // Append user options
   if (pszOptions && pszOptions[0] != '\0') {
     // Simple splitting of user options by spaces

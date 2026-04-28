@@ -105,6 +105,18 @@ if (NOT DEFINED OPENCL_CLANG_LIBRARY_NAME)
 endif()
 set(TARGET_NAME ${OPENCL_CLANG_LIBRARY_NAME}${BUILD_PLATFORM} )
 
+# SYCL headers and clang resource dir for CompileSYCL()
+if(NOT DEFINED SYCL_INCLUDE_DIR)
+  # Default: assume sycl/ is a sibling of llvm/ in the monorepo
+  set(SYCL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sycl/include")
+endif()
+# Clang resource dir is where built clang puts its internal headers
+set(CLANG_RESOURCE_DIR "${LLVM_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include")
+message(STATUS "[OPENCL-CLANG-SYCL] SYCL_INCLUDE_DIR: ${SYCL_INCLUDE_DIR}")
+message(STATUS "[OPENCL-CLANG-SYCL] CLANG_RESOURCE_DIR: ${CLANG_RESOURCE_DIR}")
+add_definitions(-DSYCL_INCLUDE_DIR="${SYCL_INCLUDE_DIR}")
+add_definitions(-DCLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}")
+
 # OPENCL_CLANG_PCH_EXTENSION can override PCH extension map in options_compile.cpp.
 # Example: "cl_khr_3d_image_writes,cl_khr_depth_images"
 set(OPENCL_CLANG_PCH_EXTENSION "" CACHE STRING "Comma-separated list of OpenCL extensions")
