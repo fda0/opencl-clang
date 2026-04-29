@@ -54,17 +54,18 @@ int populateEmbeddedHeaders(llvm::vfs::InMemoryFileSystem &FS) {
     uint32_t contentLen = readU32LE(ptr);
     ptr += 4;
 
-    if (ptr + contentLen > end)
+    // Each file's content is followed by a NUL byte in the blob (not counted
+    // in contentLen), so we need contentLen + 1 bytes available.
+    if (ptr + contentLen + 1 > end)
       break;
-    // Create a non-owning MemoryBuffer that points into the .rodata blob.
-    // The blob is valid for the lifetime of the .so, so the buffer content
-    // will remain valid.
+    // Zero-copy: point directly into the .rodata blob.  The blob includes a
+    // NUL byte after each file's content, so RequiresNullTerminator=true works.
     llvm::StringRef content(reinterpret_cast<const char *>(ptr), contentLen);
-    ptr += contentLen;
+    ptr += contentLen + 1; // skip content + NUL terminator
 
     FS.addFile(path, /*ModificationTime=*/0,
                llvm::MemoryBuffer::getMemBuffer(content, path,
-                                                 /*RequiresNullTerminator=*/false));
+                                                /*RequiresNullTerminator=*/true));
     ++count;
   }
 

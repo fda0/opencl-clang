@@ -4,7 +4,10 @@
 Blob format (all integers are uint32 little-endian):
     [num_files]
     For each file:
-        [path_len] [path_bytes (UTF-8)] [content_len] [content_bytes]
+        [path_len] [path_bytes (UTF-8)] [content_len] [content_bytes] [NUL]
+
+    Each file's content is followed by a NUL byte (not counted in content_len)
+    so that the content can be used as a null-terminated C string in-place.
 
 Usage:
     pack_headers.py --output blob.bin \
@@ -48,6 +51,7 @@ def write_blob(entries, output_path):
             out.write(vpath_bytes)
             out.write(struct.pack('<I', len(content)))
             out.write(content)
+            out.write(b'\x00')  # NUL terminator for zero-copy MemoryBuffer
 
 
 def main():
