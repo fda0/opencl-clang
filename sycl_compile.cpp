@@ -236,6 +236,11 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   Args.push_back("-triple");
   Args.push_back("spir64-unknown-unknown");
 
+  // Auxiliary triple: injects host predefined macros (__x86_64__, __LP64__)
+  // so that system headers (e.g. stubs.h) select the correct 64-bit paths.
+  Args.push_back("-aux-triple");
+  Args.push_back("x86_64-unknown-linux-gnu");
+
   // Emit LLVM IR only (no codegen)
   Args.push_back("-emit-llvm");
 
@@ -244,6 +249,7 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
 
   // C++ standard
   Args.push_back("-std=c++17");
+
 
   // SYCL runtime headers
 #ifdef SYCL_INCLUDE_DIR
