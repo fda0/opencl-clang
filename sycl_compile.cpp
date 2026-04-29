@@ -198,40 +198,55 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   // C++ standard
   Args.push_back("-std=c++17");
 
+  // Cap errors to avoid stack overflow in DiagnosticRenderer when the
+  // include stack is very deep (matches DPC++ cc1 default).
+  Args.push_back("-ferror-limit");
+  Args.push_back("19");
+
   // Prevent cc1 from searching for default C++ system include paths.
-  // All headers are provided via the embedded in-memory VFS.
+  // All C++ headers are provided via the embedded in-memory VFS.
   Args.push_back("-nostdinc++");
 
-  // SYCL stl_wrappers (must come BEFORE the C++ stdlib path so
-  // #include_next in the wrappers chains to libc++).
-#ifdef SYCL_EMBEDDED_STL_WRAPPERS
-  Args.push_back("-internal-isystem");
-  Args.push_back(SYCL_EMBEDDED_STL_WRAPPERS);
-#endif
+  // ---- Include search order ----
+  // NOTE: stl_wrappers are deliberately EXCLUDED.  They exist to patch GCC
+  // libstdc++ for clang SYCL compatibility, but with libc++ (clang-native)
+  // they are unnecessary and cause circular includes (cassert/assert.h are
+  // intentionally unguarded in C/C++ and the wrappers pull in SYCL headers
+  // that re-include <cassert>, creating an infinite loop).
 
-  // SYCL runtime headers
+  // 1. SYCL runtime headers (sycl/sycl.hpp, etc.)
 #ifdef SYCL_EMBEDDED_SYCL_INCLUDE
-  Args.push_back("-isystem");
+  Args.push_back("-internal-isystem");
   Args.push_back(SYCL_EMBEDDED_SYCL_INCLUDE);
 #endif
 
-  // Generated SYCL headers (feature_test.hpp, etc.)
+  // 2. Generated SYCL headers (feature_test.hpp, etc.)
 #ifdef SYCL_EMBEDDED_SYCL_GENERATED
-  Args.push_back("-isystem");
+  Args.push_back("-internal-isystem");
   Args.push_back(SYCL_EMBEDDED_SYCL_GENERATED);
 #endif
 
-  // libc++ standard library headers (from llvm-sycl, replaces GCC libstdc++)
+  // 3. libc++ standard library headers (from llvm-sycl, replaces GCC libstdc++)
 #ifdef SYCL_EMBEDDED_LIBCXX
   Args.push_back("-internal-isystem");
   Args.push_back(SYCL_EMBEDDED_LIBCXX);
 #endif
 
-  // Clang resource headers (stddef.h, stdint.h, etc.)
+  // 4. Clang resource headers (stddef.h, stdarg.h, etc.)
 #ifdef SYCL_EMBEDDED_CLANG_RESOURCE
   Args.push_back("-internal-isystem");
   Args.push_back(SYCL_EMBEDDED_CLANG_RESOURCE);
 #endif
+
+  // 5. System C headers — needed by clang resource header #include_next chains
+  //    (e.g. clang's limits.h → glibc limits.h).  These come from the host OS
+  //    and are stable across compiler versions (unlike C++ headers).
+  Args.push_back("-internal-isystem");
+  Args.push_back("/usr/local/include");
+  Args.push_back("-internal-externc-isystem");
+  Args.push_back("/usr/include/x86_64-linux-gnu");
+  Args.push_back("-internal-externc-isystem");
+  Args.push_back("/usr/include");
 
   // Append user options
   if (pszOptions && pszOptions[0] != '\0') {

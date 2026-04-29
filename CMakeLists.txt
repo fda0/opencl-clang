@@ -143,8 +143,11 @@ if(NOT EXISTS "${LIBCXX_INCLUDE_DIR}")
 endif()
 message(STATUS "[OPENCL-CLANG-SYCL] LIBCXX_INCLUDE_DIR: ${LIBCXX_INCLUDE_DIR}")
 
-# Virtual path prefixes used in the embedded blob and cc1 -isystem args
-set(SYCL_EMBEDDED_STL_WRAPPERS "/embedded/sycl/stl_wrappers")
+# Virtual path prefixes used in the embedded blob and cc1 -internal-isystem args.
+# NOTE: stl_wrappers are NOT given their own search path.  They exist in the
+# blob inside the SYCL include tree but are not added to cc1's search order
+# because they are designed for GCC libstdc++ compatibility and cause circular
+# includes when used with libc++ (cassert/assert.h are intentionally unguarded).
 set(SYCL_EMBEDDED_SYCL_INCLUDE "/embedded/sycl/include")
 set(SYCL_EMBEDDED_SYCL_GENERATED "/embedded/sycl_generated/include")
 set(SYCL_EMBEDDED_LIBCXX "/embedded/libcxx/include")
@@ -158,7 +161,6 @@ add_custom_command(
   OUTPUT "${SYCL_HEADERS_BLOB}"
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py
     --output "${SYCL_HEADERS_BLOB}"
-    --dir "${SYCL_EMBEDDED_STL_WRAPPERS}" "${SYCL_INCLUDE_DIR}/sycl/stl_wrappers"
     --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}" "${SYCL_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_SYCL_GENERATED}" "${SYCL_GENERATED_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_LIBCXX}" "${LIBCXX_INCLUDE_DIR}"
@@ -187,7 +189,6 @@ set_source_files_properties(
 )
 
 # Export virtual path prefixes as compile definitions for sycl_compile.cpp
-add_definitions(-DSYCL_EMBEDDED_STL_WRAPPERS="${SYCL_EMBEDDED_STL_WRAPPERS}")
 add_definitions(-DSYCL_EMBEDDED_SYCL_INCLUDE="${SYCL_EMBEDDED_SYCL_INCLUDE}")
 add_definitions(-DSYCL_EMBEDDED_SYCL_GENERATED="${SYCL_EMBEDDED_SYCL_GENERATED}")
 add_definitions(-DSYCL_EMBEDDED_LIBCXX="${SYCL_EMBEDDED_LIBCXX}")
