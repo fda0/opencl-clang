@@ -153,6 +153,11 @@ set(SYCL_EMBEDDED_SYCL_GENERATED "/embedded/sycl_generated/include")
 set(SYCL_EMBEDDED_LIBCXX "/embedded/libcxx/include")
 set(SYCL_EMBEDDED_CLANG_RESOURCE "/embedded/clang/include")
 
+# Unified Runtime headers — embedded under the SYCL include prefix so that
+# <unified-runtime/ur_api.h> is found by the existing -internal-isystem path.
+set(UR_INCLUDE_DIR "${SYCL_INCLUDE_DIR}/../../unified-runtime/include")
+message(STATUS "[OPENCL-CLANG-SYCL] UR_INCLUDE_DIR: ${UR_INCLUDE_DIR}")
+
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # 1. Run pack_headers.py to create the binary blob
@@ -162,6 +167,7 @@ add_custom_command(
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py
     --output "${SYCL_HEADERS_BLOB}"
     --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}" "${SYCL_INCLUDE_DIR}"
+    --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}/unified-runtime" "${UR_INCLUDE_DIR}/unified-runtime"
     --dir "${SYCL_EMBEDDED_SYCL_GENERATED}" "${SYCL_GENERATED_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_LIBCXX}" "${LIBCXX_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_CLANG_RESOURCE}" "${CLANG_RESOURCE_DIR}"
