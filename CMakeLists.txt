@@ -131,9 +131,67 @@ endif()
 message(STATUS "[OPENCL-CLANG-SYCL] SYCL_INCLUDE_DIR: ${SYCL_INCLUDE_DIR}")
 message(STATUS "[OPENCL-CLANG-SYCL] CLANG_RESOURCE_DIR: ${CLANG_RESOURCE_DIR}")
 message(STATUS "[OPENCL-CLANG-SYCL] SYCL_GENERATED_INCLUDE_DIR: ${SYCL_GENERATED_INCLUDE_DIR}")
-add_definitions(-DSYCL_INCLUDE_DIR="${SYCL_INCLUDE_DIR}")
-add_definitions(-DCLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}")
-add_definitions(-DSYCL_GENERATED_INCLUDE_DIR="${SYCL_GENERATED_INCLUDE_DIR}")
+
+# --- Embedded headers: pack SYCL + libc++ + clang resource headers into .so ---
+# libc++ headers from the llvm-sycl source tree (replaces system GCC libstdc++)
+if(NOT DEFINED LIBCXX_INCLUDE_DIR)
+  set(LIBCXX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libcxx/include")
+endif()
+if(NOT EXISTS "${LIBCXX_INCLUDE_DIR}")
+  # Fallback: llvm-sycl might be at a different relative path
+  set(LIBCXX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../llvm-sycl/libcxx/include")
+endif()
+message(STATUS "[OPENCL-CLANG-SYCL] LIBCXX_INCLUDE_DIR: ${LIBCXX_INCLUDE_DIR}")
+
+# Virtual path prefixes used in the embedded blob and cc1 -isystem args
+set(SYCL_EMBEDDED_STL_WRAPPERS "/embedded/sycl/stl_wrappers")
+set(SYCL_EMBEDDED_SYCL_INCLUDE "/embedded/sycl/include")
+set(SYCL_EMBEDDED_SYCL_GENERATED "/embedded/sycl_generated/include")
+set(SYCL_EMBEDDED_LIBCXX "/embedded/libcxx/include")
+set(SYCL_EMBEDDED_CLANG_RESOURCE "/embedded/clang/include")
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+# 1. Run pack_headers.py to create the binary blob
+set(SYCL_HEADERS_BLOB "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers.blob")
+add_custom_command(
+  OUTPUT "${SYCL_HEADERS_BLOB}"
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py
+    --output "${SYCL_HEADERS_BLOB}"
+    --dir "${SYCL_EMBEDDED_STL_WRAPPERS}" "${SYCL_INCLUDE_DIR}/sycl/stl_wrappers"
+    --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}" "${SYCL_INCLUDE_DIR}"
+    --dir "${SYCL_EMBEDDED_SYCL_GENERATED}" "${SYCL_GENERATED_INCLUDE_DIR}"
+    --dir "${SYCL_EMBEDDED_LIBCXX}" "${LIBCXX_INCLUDE_DIR}"
+    --dir "${SYCL_EMBEDDED_CLANG_RESOURCE}" "${CLANG_RESOURCE_DIR}"
+    --file "${SYCL_EMBEDDED_LIBCXX}/__config_site"
+           "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
+  DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
+  COMMENT "[OPENCL-CLANG-SYCL] Packing embedded headers blob"
+  VERBATIM
+)
+
+# 2. Generate the .S file that .incbin's the blob into .rodata
+set(SYCL_HEADERS_BLOB_PATH "${SYCL_HEADERS_BLOB}")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/sycl_headers_blob.S.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers_blob.S"
+  @ONLY
+)
+
+# 3. Compile the assembly (depends on the blob being generated first)
+set_source_files_properties(
+  "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers_blob.S"
+  PROPERTIES OBJECT_DEPENDS "${SYCL_HEADERS_BLOB}"
+)
+
+# Export virtual path prefixes as compile definitions for sycl_compile.cpp
+add_definitions(-DSYCL_EMBEDDED_STL_WRAPPERS="${SYCL_EMBEDDED_STL_WRAPPERS}")
+add_definitions(-DSYCL_EMBEDDED_SYCL_INCLUDE="${SYCL_EMBEDDED_SYCL_INCLUDE}")
+add_definitions(-DSYCL_EMBEDDED_SYCL_GENERATED="${SYCL_EMBEDDED_SYCL_GENERATED}")
+add_definitions(-DSYCL_EMBEDDED_LIBCXX="${SYCL_EMBEDDED_LIBCXX}")
+add_definitions(-DSYCL_EMBEDDED_CLANG_RESOURCE="${SYCL_EMBEDDED_CLANG_RESOURCE}")
 
 # OPENCL_CLANG_PCH_EXTENSION can override PCH extension map in options_compile.cpp.
 # Example: "cl_khr_3d_image_writes,cl_khr_depth_images"
@@ -218,6 +276,7 @@ add_public_tablegen_target(CClangCompileOptions)
 set(TARGET_INCLUDE_FILES
     opencl_clang.h
     sycl_compile.h
+    embedded_headers.h
     options.h
     binary_result.h
     pch_mgr.h
@@ -228,9 +287,11 @@ set(TARGET_INCLUDE_FILES
 set(TARGET_SOURCE_FILES
     opencl_clang.cpp
     sycl_compile.cpp
+    embedded_headers.cpp
     options.cpp
     pch_mgr.cpp
     options_compile.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers_blob.S"
 )
 
 #

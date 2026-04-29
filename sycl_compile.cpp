@@ -18,6 +18,7 @@ Copyright (c) Intel Corporation (2009-2026).
 
 #include "sycl_compile.h"
 #include "binary_result.h"
+#include "embedded_headers.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -30,8 +31,6 @@ Copyright (c) Intel Corporation (2009-2026).
 #include "llvm/IR/PassManager.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
@@ -160,65 +159,14 @@ static SPIRV::TranslatorOpts getSYCLSPIRVTranslatorOpts() {
   return Opts;
 }
 
-/// Detect system GCC C++ include paths at runtime.
-/// Mirrors clang::driver::toolchains::Generic_GCC::addGCCLibStdCxxIncludePaths
-/// which adds -internal-isystem for:
-///   1. /usr/include/c++/<ver>
-///   2. /usr/include/<triple>/c++/<ver>  (Debian multiarch)
-///   3. /usr/include/c++/<ver>/backward
-/// See clang/lib/Driver/ToolChains/Gnu.cpp:addLibStdCXXIncludePaths()
-/// and clang/lib/Driver/ToolChain.cpp:addSystemInclude() which emits
-/// -internal-isystem.
-static void addSystemCXXIncludePaths(std::vector<std::string> &Args) {
-  namespace fs = llvm::sys::fs;
-  namespace path = llvm::sys::path;
-
-  // Scan /usr/include/c++/ for the highest GCC version directory
-  std::string BestVersion;
-  std::string BaseDir = "/usr/include/c++";
-  std::error_code EC;
-  for (fs::directory_iterator Dir(BaseDir, EC), End; !EC && Dir != End;
-       Dir.increment(EC)) {
-    llvm::StringRef DirName = path::filename(Dir->path());
-    if (BestVersion.empty() || DirName > BestVersion)
-      BestVersion = DirName.str();
-  }
-  if (BestVersion.empty())
-    return;
-
-  // GPLUSPLUS_INCLUDE_DIR
-  Args.push_back("-internal-isystem");
-  Args.push_back(BaseDir + "/" + BestVersion);
-
-  // GPLUSPLUS_TOOL_INCLUDE_DIR (Debian multiarch)
-  Args.push_back("-internal-isystem");
-  Args.push_back("/usr/include/x86_64-linux-gnu/c++/" + BestVersion);
-
-  // GPLUSPLUS_BACKWARD_INCLUDE_DIR
-  Args.push_back("-internal-isystem");
-  Args.push_back(BaseDir + "/" + BestVersion + "/backward");
-
-  // GCC internal headers
-  std::string GccInternal =
-      "/usr/lib/gcc/x86_64-linux-gnu/" + BestVersion + "/include";
-  if (fs::is_directory(GccInternal)) {
-    Args.push_back("-internal-isystem");
-    Args.push_back(GccInternal);
-  }
-
-  // System include dirs
-  Args.push_back("-internal-isystem");
-  Args.push_back("/usr/local/include");
-  Args.push_back("-internal-isystem");
-  Args.push_back("/usr/include/x86_64-linux-gnu");
-  Args.push_back("-internal-isystem");
-  Args.push_back("/usr/include");
-}
-
 /// Build the Clang cc1-level arguments for SYCL device compilation.
 /// Target: spir64 (SPIR-V), EmitLLVMOnly action to get an llvm::Module.
 /// Note: these are cc1 flags (not driver flags) since we call
 /// CompilerInvocation::CreateFromArgs directly, bypassing the driver.
+///
+/// All C++ standard library, SYCL, and clang resource headers are served
+/// from the embedded in-memory VFS (populated by populateEmbeddedHeaders).
+/// Virtual path prefixes are set at build time via -D defines.
 static std::vector<std::string>
 buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
                      const char *sourceName) {
@@ -250,27 +198,40 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   // C++ standard
   Args.push_back("-std=c++17");
 
+  // Prevent cc1 from searching for default C++ system include paths.
+  // All headers are provided via the embedded in-memory VFS.
+  Args.push_back("-nostdinc++");
+
+  // SYCL stl_wrappers (must come BEFORE the C++ stdlib path so
+  // #include_next in the wrappers chains to libc++).
+#ifdef SYCL_EMBEDDED_STL_WRAPPERS
+  Args.push_back("-internal-isystem");
+  Args.push_back(SYCL_EMBEDDED_STL_WRAPPERS);
+#endif
 
   // SYCL runtime headers
-#ifdef SYCL_INCLUDE_DIR
+#ifdef SYCL_EMBEDDED_SYCL_INCLUDE
   Args.push_back("-isystem");
-  Args.push_back(SYCL_INCLUDE_DIR);
+  Args.push_back(SYCL_EMBEDDED_SYCL_INCLUDE);
 #endif
 
   // Generated SYCL headers (feature_test.hpp, etc.)
-#ifdef SYCL_GENERATED_INCLUDE_DIR
+#ifdef SYCL_EMBEDDED_SYCL_GENERATED
   Args.push_back("-isystem");
-  Args.push_back(SYCL_GENERATED_INCLUDE_DIR);
+  Args.push_back(SYCL_EMBEDDED_SYCL_GENERATED);
 #endif
 
-  // Clang resource headers (stddef.h, etc.)
-#ifdef CLANG_RESOURCE_DIR
+  // libc++ standard library headers (from llvm-sycl, replaces GCC libstdc++)
+#ifdef SYCL_EMBEDDED_LIBCXX
   Args.push_back("-internal-isystem");
-  Args.push_back(CLANG_RESOURCE_DIR);
+  Args.push_back(SYCL_EMBEDDED_LIBCXX);
 #endif
 
-  // System C++ standard library headers (runtime-detected GCC paths)
-  addSystemCXXIncludePaths(Args);
+  // Clang resource headers (stddef.h, stdint.h, etc.)
+#ifdef SYCL_EMBEDDED_CLANG_RESOURCE
+  Args.push_back("-internal-isystem");
+  Args.push_back(SYCL_EMBEDDED_CLANG_RESOURCE);
+#endif
 
   // Append user options
   if (pszOptions && pszOptions[0] != '\0') {
@@ -426,6 +387,9 @@ CompileSYCL(const char *pszProgramSource, const char **pInputHeaders,
     compiler->setVirtualFileSystem(std::move(OverlayFS));
     compiler->createFileManager();
     compiler->createSourceManager();
+
+    // Populate the VFS with embedded SYCL, libc++, and clang resource headers
+    populateEmbeddedHeaders(*MemFS);
 
     // Map the SYCL source into the VFS
     MemFS->addFile(sourceName, (time_t)0,

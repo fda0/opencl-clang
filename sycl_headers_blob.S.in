@@ -1,0 +1,14 @@
+// Auto-generated — do not edit.  See CMakeLists.txt.
+// Embeds the SYCL/libc++/clang header blob into .rodata via .incbin.
+
+    .section .rodata,"a",@progbits
+    .globl  sycl_headers_blob
+    .globl  sycl_headers_blob_end
+    .type   sycl_headers_blob, @object
+    .type   sycl_headers_blob_end, @object
+    .p2align 4
+sycl_headers_blob:
+    .incbin "@SYCL_HEADERS_BLOB_PATH@"
+sycl_headers_blob_end:
+    .byte 0
+    .size sycl_headers_blob, .-sycl_headers_blob
