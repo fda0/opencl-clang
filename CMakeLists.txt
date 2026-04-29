@@ -167,9 +167,12 @@ add_custom_command(
     --dir "${SYCL_EMBEDDED_CLANG_RESOURCE}" "${CLANG_RESOURCE_DIR}"
     --file "${SYCL_EMBEDDED_LIBCXX}/__config_site"
            "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
+    --file "${SYCL_EMBEDDED_LIBCXX}/__assertion_handler"
+           "${LIBCXX_INCLUDE_DIR}/../vendor/llvm/default_assertion_handler.in"
   DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
+    "${LIBCXX_INCLUDE_DIR}/../vendor/llvm/default_assertion_handler.in"
   COMMENT "[OPENCL-CLANG-SYCL] Packing embedded headers blob"
   VERBATIM
 )
