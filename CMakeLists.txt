@@ -129,6 +129,20 @@ else()
   message(WARNING "[OPENCL-CLANG-SYCL] Could not find feature_test.hpp.in at ${_feature_test_in}")
 endif()
 
+# Generate version.hpp (normally done by the sycl runtime CMake)
+set(SYCL_MAJOR_VERSION 9)
+set(SYCL_MINOR_VERSION 0)
+set(SYCL_PATCH_VERSION 0)
+set(__SYCL_COMPILER_VERSION "")
+set(_version_in "${SYCL_INCLUDE_DIR}/../source/version.hpp.in")
+if(EXISTS "${_version_in}")
+  configure_file("${_version_in}"
+                  "${SYCL_GENERATED_INCLUDE_DIR}/sycl/version.hpp")
+  message(STATUS "[OPENCL-CLANG-SYCL] Generated version.hpp")
+else()
+  message(WARNING "[OPENCL-CLANG-SYCL] Could not find version.hpp.in at ${_version_in}")
+endif()
+
 # Generate device_aspect_macros.hpp (normally done by the sycl runtime CMake)
 set(_aspect_gen "${SYCL_INCLUDE_DIR}/../source/device_aspect_macros_generator.py")
 if(EXISTS "${_aspect_gen}")
@@ -199,6 +213,8 @@ add_custom_command(
            "${LIBCXX_INCLUDE_DIR}/../vendor/llvm/default_assertion_handler.in"
     --file "${SYCL_EMBEDDED_SYCL_INCLUDE}/sycl/device_aspect_macros.hpp"
            "${SYCL_GENERATED_INCLUDE_DIR}/sycl/device_aspect_macros.hpp"
+    --file "${SYCL_EMBEDDED_SYCL_INCLUDE}/sycl/version.hpp"
+           "${SYCL_GENERATED_INCLUDE_DIR}/sycl/version.hpp"
   DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
