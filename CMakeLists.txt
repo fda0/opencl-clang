@@ -114,6 +114,7 @@ endif()
 set(CLANG_RESOURCE_DIR "${LLVM_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include")
 
 # Generate feature_test.hpp (normally done by the sycl runtime CMake)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(SYCL_EXT_ONEAPI_BACKEND_CUDA 0)
 set(SYCL_EXT_ONEAPI_BACKEND_HIP 0)
 set(SYCL_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers")
@@ -126,6 +127,22 @@ if(EXISTS "${_feature_test_in}")
   message(STATUS "[OPENCL-CLANG-SYCL] Generated feature_test.hpp")
 else()
   message(WARNING "[OPENCL-CLANG-SYCL] Could not find feature_test.hpp.in at ${_feature_test_in}")
+endif()
+
+# Generate device_aspect_macros.hpp (normally done by the sycl runtime CMake)
+set(_aspect_gen "${SYCL_INCLUDE_DIR}/../source/device_aspect_macros_generator.py")
+if(EXISTS "${_aspect_gen}")
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} "${_aspect_gen}" "${SYCL_INCLUDE_DIR}/sycl"
+            "${SYCL_GENERATED_INCLUDE_DIR}/sycl"
+    RESULT_VARIABLE _aspect_result)
+  if(_aspect_result EQUAL 0)
+    message(STATUS "[OPENCL-CLANG-SYCL] Generated device_aspect_macros.hpp")
+  else()
+    message(WARNING "[OPENCL-CLANG-SYCL] device_aspect_macros_generator.py failed: ${_aspect_result}")
+  endif()
+else()
+  message(WARNING "[OPENCL-CLANG-SYCL] Could not find device_aspect_macros_generator.py at ${_aspect_gen}")
 endif()
 
 message(STATUS "[OPENCL-CLANG-SYCL] SYCL_INCLUDE_DIR: ${SYCL_INCLUDE_DIR}")
@@ -158,7 +175,11 @@ set(SYCL_EMBEDDED_CLANG_RESOURCE "/embedded/clang/include")
 set(UR_INCLUDE_DIR "${SYCL_INCLUDE_DIR}/../../unified-runtime/include")
 message(STATUS "[OPENCL-CLANG-SYCL] UR_INCLUDE_DIR: ${UR_INCLUDE_DIR}")
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# OpenCL C API headers (Khronos) — needed because sycl/detail/cl.h includes <CL/cl.h>
+if(NOT DEFINED OPENCL_HEADERS_DIR)
+  set(OPENCL_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../opencl-headers")
+endif()
+message(STATUS "[OPENCL-CLANG-SYCL] OPENCL_HEADERS_DIR: ${OPENCL_HEADERS_DIR}")
 
 # 1. Run pack_headers.py to create the binary blob
 set(SYCL_HEADERS_BLOB "${CMAKE_CURRENT_BINARY_DIR}/sycl_headers.blob")
@@ -168,6 +189,7 @@ add_custom_command(
     --output "${SYCL_HEADERS_BLOB}"
     --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}" "${SYCL_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}/unified-runtime" "${UR_INCLUDE_DIR}/unified-runtime"
+    --dir "${SYCL_EMBEDDED_SYCL_INCLUDE}/CL" "${OPENCL_HEADERS_DIR}/CL"
     --dir "${SYCL_EMBEDDED_SYCL_GENERATED}" "${SYCL_GENERATED_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_LIBCXX}" "${LIBCXX_INCLUDE_DIR}"
     --dir "${SYCL_EMBEDDED_CLANG_RESOURCE}" "${CLANG_RESOURCE_DIR}"
@@ -175,6 +197,8 @@ add_custom_command(
            "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
     --file "${SYCL_EMBEDDED_LIBCXX}/__assertion_handler"
            "${LIBCXX_INCLUDE_DIR}/../vendor/llvm/default_assertion_handler.in"
+    --file "${SYCL_EMBEDDED_SYCL_INCLUDE}/sycl/device_aspect_macros.hpp"
+           "${SYCL_GENERATED_INCLUDE_DIR}/sycl/device_aspect_macros.hpp"
   DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/pack_headers.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/libcxx_config_site_device.h"
