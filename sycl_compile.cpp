@@ -179,6 +179,7 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   Args.push_back("c++");
   Args.push_back("-fsycl-is-device");
   Args.push_back("-fno-sycl-instrument-device-code");
+  Args.push_back("-fdeclare-spirv-builtins");
 
   // Target triple for SPIR-V 64-bit
   Args.push_back("-triple");
