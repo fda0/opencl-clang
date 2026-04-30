@@ -198,11 +198,6 @@ buildSYCLCompileArgs(const char *pszOptions, const char *pszOptionsEx,
   // C++ standard
   Args.push_back("-std=c++17");
 
-  // Cap errors to avoid stack overflow in DiagnosticRenderer when the
-  // include stack is very deep (matches DPC++ cc1 default).
-  Args.push_back("-ferror-limit");
-  Args.push_back("19");
-
   // Prevent cc1 from searching for default C++ system include paths.
   // All C++ headers are provided via the embedded in-memory VFS.
   Args.push_back("-nostdinc++");
