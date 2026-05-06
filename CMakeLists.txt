@@ -107,8 +107,20 @@ set(TARGET_NAME ${OPENCL_CLANG_LIBRARY_NAME}${BUILD_PLATFORM} )
 
 # SYCL headers and clang resource dir for CompileSYCL()
 if(NOT DEFINED SYCL_INCLUDE_DIR)
-  # Default: assume sycl/ is a sibling of llvm/ in the monorepo
+  # Default: assume opencl-clang is inside the monorepo (ExternalProject case)
   set(SYCL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sycl/include")
+  if(NOT EXISTS "${SYCL_INCLUDE_DIR}")
+    # Fallback: opencl-clang is external, use LLVM source root to find monorepo siblings
+    # (CMAKE_SOURCE_DIR points to the LLVM source root when built as LLVM external project)
+    set(SYCL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../sycl/include")
+  endif()
+  if(NOT EXISTS "${SYCL_INCLUDE_DIR}")
+    message(FATAL_ERROR
+      "[OPENCL-CLANG-SYCL] Cannot find SYCL include dir. Tried:\n"
+      "  ${CMAKE_CURRENT_SOURCE_DIR}/../sycl/include\n"
+      "  ${CMAKE_SOURCE_DIR}/../sycl/include\n"
+      "Set -DSYCL_INCLUDE_DIR=<path> to the sycl/include directory in the intel/llvm monorepo.")
+  endif()
 endif()
 # Clang resource dir is where built clang puts its internal headers
 set(CLANG_RESOURCE_DIR "${LLVM_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include")
@@ -167,10 +179,17 @@ message(STATUS "[OPENCL-CLANG-SYCL] SYCL_GENERATED_INCLUDE_DIR: ${SYCL_GENERATED
 # libc++ headers from the llvm-sycl source tree (replaces system GCC libstdc++)
 if(NOT DEFINED LIBCXX_INCLUDE_DIR)
   set(LIBCXX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libcxx/include")
-endif()
-if(NOT EXISTS "${LIBCXX_INCLUDE_DIR}")
-  # Fallback: llvm-sycl might be at a different relative path
-  set(LIBCXX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../llvm-sycl/libcxx/include")
+  if(NOT EXISTS "${LIBCXX_INCLUDE_DIR}")
+    # Fallback: opencl-clang is external, use LLVM source root to find monorepo siblings
+    set(LIBCXX_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../libcxx/include")
+  endif()
+  if(NOT EXISTS "${LIBCXX_INCLUDE_DIR}")
+    message(FATAL_ERROR
+      "[OPENCL-CLANG-SYCL] Cannot find libc++ include dir. Tried:\n"
+      "  ${CMAKE_CURRENT_SOURCE_DIR}/../libcxx/include\n"
+      "  ${CMAKE_SOURCE_DIR}/../libcxx/include\n"
+      "Set -DLIBCXX_INCLUDE_DIR=<path> to the libcxx/include directory in the intel/llvm monorepo.")
+  endif()
 endif()
 message(STATUS "[OPENCL-CLANG-SYCL] LIBCXX_INCLUDE_DIR: ${LIBCXX_INCLUDE_DIR}")
 
@@ -192,6 +211,10 @@ message(STATUS "[OPENCL-CLANG-SYCL] UR_INCLUDE_DIR: ${UR_INCLUDE_DIR}")
 # OpenCL C API headers (Khronos) — needed because sycl/detail/cl.h includes <CL/cl.h>
 if(NOT DEFINED OPENCL_HEADERS_DIR)
   set(OPENCL_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../opencl-headers")
+  if(NOT EXISTS "${OPENCL_HEADERS_DIR}/CL")
+    # Fallback: buildplan uses opencl_headers (underscore) naming convention
+    set(OPENCL_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../opencl_headers")
+  endif()
 endif()
 message(STATUS "[OPENCL-CLANG-SYCL] OPENCL_HEADERS_DIR: ${OPENCL_HEADERS_DIR}")
 
