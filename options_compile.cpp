@@ -317,6 +317,30 @@ std::string EffectiveOptionsFilter::processOptions(const OpenCLArgList &args,
   std::back_insert_iterator<ArgsVector> it(std::back_inserter(effectiveArgs));
   quoted_tokenize(it, pszOptionsEx, " \t", '"', '\x00');
 
+  // LLVM 16's opencl-c-base.h unconditionally defined all core CL 2.0 feature
+  // macros (__opencl_c_device_enqueue, __opencl_c_images, etc.). LLVM 23
+  // removed these unconditional defines and relies on the feature map (set via
+  // -cl-ext= options). IGC's infrastructure (CTHeader.h, opencl-c.h guards)
+  // depends on these features being available for CL 2.0 compilation.
+  // Explicitly enable them here, after pszOptionsEx, so they override any
+  // preceding -cl-ext=-all.
+  if (iCLStdSet == 200) {
+    effectiveArgs.push_back("-cl-ext="
+        "+__opencl_c_pipes,"
+        "+__opencl_c_generic_address_space,"
+        "+__opencl_c_work_group_collective_functions,"
+        "+__opencl_c_atomic_order_acq_rel,"
+        "+__opencl_c_atomic_order_seq_cst,"
+        "+__opencl_c_atomic_scope_device,"
+        "+__opencl_c_atomic_scope_all_devices,"
+        "+__opencl_c_device_enqueue,"
+        "+__opencl_c_read_write_images,"
+        "+__opencl_c_program_scope_global_variables,"
+        "+__opencl_c_images,"
+        "+__opencl_c_subgroups,"
+        "+__opencl_c_3d_image_writes");
+  }
+
   for (auto it = effectiveArgs.begin(), end = effectiveArgs.end(); it != end;
        ++it) {
     if (it->compare("-Dcl_khr_fp64") == 0 || it->compare("-D cl_khr_fp64=1") == 0)
