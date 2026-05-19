@@ -13,24 +13,15 @@ still included, leading to errors when __opencl_c_images is not
 supported. Removing __IMAGE_SUPPORT__ ensures image support is
 controlled solely through the __opencl_c_* feature macros.
 ---
- clang/lib/Frontend/InitPreprocessor.cpp     | 5 -----
+ clang/lib/Frontend/InitPreprocessor.cpp     | 3 ---
  clang/test/Preprocessor/predefined-macros.c | 5 -----
- 2 files changed, 10 deletions(-)
+ 2 files changed, 8 deletions(-)
 
 diff --git a/clang/lib/Frontend/InitPreprocessor.cpp b/clang/lib/Frontend/InitPreprocessor.cpp
 index fd38c3311..841f017ac 100644
 --- a/clang/lib/Frontend/InitPreprocessor.cpp
 +++ b/clang/lib/Frontend/InitPreprocessor.cpp
-@@ -972,8 +972,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
-
-   if (LangOpts.GNUCVersion && LangOpts.CPlusPlus11)
-     Builder.defineMacro("__GXX_EXPERIMENTAL_CXX0X__");
--
--  if (TI.getTriple().isOSCygMing()) {
-     // Set ABI defining macros for libstdc++ for MinGW and Cygwin, where the
-     // default in libstdc++ differs from the defaults for this target.
-     Builder.defineMacro("__GXX_TYPEINFO_EQUALITY_INLINE", "0");
-@@ -1564,9 +1562,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
+@@ -1564,9 +1564,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
    // OpenCL definitions.
    if (LangOpts.OpenCL) {
      InitializeOpenCLFeatureTestMacros(TI, LangOpts, Builder);
@@ -38,28 +29,28 @@ index fd38c3311..841f017ac 100644
 -    if (TI.getTriple().isSPIR() || TI.getTriple().isSPIRV())
 -      Builder.defineMacro("__IMAGE_SUPPORT__");
    }
-
+ 
    if (TI.hasInt128Type() && LangOpts.CPlusPlus && LangOpts.GNUMode) {
 diff --git a/clang/test/Preprocessor/predefined-macros.c b/clang/test/Preprocessor/predefined-macros.c
 index 1dbb8013c..8a6b266b6 100644
 --- a/clang/test/Preprocessor/predefined-macros.c
 +++ b/clang/test/Preprocessor/predefined-macros.c
 @@ -210,21 +210,18 @@
-
+ 
  // RUN: %clang_cc1 %s -E -dM -o - -x cl -triple spir-unknown-unknown \
  // RUN:   | FileCheck -match-full-lines %s --check-prefix=CHECK-SPIR
 -// CHECK-SPIR-DAG: #define __IMAGE_SUPPORT__ 1
  // CHECK-SPIR-DAG: #define __SPIR__ 1
  // CHECK-SPIR-DAG: #define __SPIR32__ 1
  // CHECK-SPIR-NOT: #define __SPIR64__ 1
-
+ 
  // RUN: %clang_cc1 %s -E -dM -o - -x cl -triple spir64-unknown-unknown \
  // RUN:   | FileCheck -match-full-lines %s --check-prefix=CHECK-SPIR64
 -// CHECK-SPIR64-DAG: #define __IMAGE_SUPPORT__ 1
  // CHECK-SPIR64-DAG: #define __SPIR__ 1
  // CHECK-SPIR64-DAG: #define __SPIR64__ 1
  // CHECK-SPIR64-NOT: #define __SPIR32__ 1
-
+ 
  // RUN: %clang_cc1 %s -E -dM -o - -x cl -triple spirv32-unknown-unknown \
  // RUN:   | FileCheck -match-full-lines %s --check-prefix=CHECK-SPIRV32
 -// CHECK-SPIRV32-DAG: #define __IMAGE_SUPPORT__ 1
@@ -67,7 +58,7 @@ index 1dbb8013c..8a6b266b6 100644
  // CHECK-SPIRV32-DAG: #define __SPIRV32__ 1
  // CHECK-SPIRV32-NOT: #define __SPIRV64__ 1
 @@ -232,7 +229,6 @@
-
+ 
  // RUN: %clang_cc1 %s -E -dM -o - -x cl -triple spirv64-unknown-unknown \
  // RUN:   | FileCheck -match-full-lines %s --check-prefix=CHECK-SPIRV64
 -// CHECK-SPIRV64-DAG: #define __IMAGE_SUPPORT__ 1
@@ -75,7 +66,7 @@ index 1dbb8013c..8a6b266b6 100644
  // CHECK-SPIRV64-DAG: #define __SPIRV64__ 1
  // CHECK-SPIRV64-NOT: #define __SPIRV32__ 1
 @@ -240,7 +236,6 @@
-
+ 
  // RUN: %clang_cc1 %s -E -dM -o - -x cl -triple spirv64-amd-amdhsa \
  // RUN:   | FileCheck -match-full-lines %s --check-prefix=CHECK-SPIRV64-AMDGCN
 -// CHECK-SPIRV64-AMDGCN-DAG: #define __IMAGE_SUPPORT__ 1
